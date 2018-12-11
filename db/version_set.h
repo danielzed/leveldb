@@ -49,6 +49,7 @@ int FindFile(const InternalKeyComparator& icmp,
 // largest==NULL represents a key largest than all keys in the DB.
 // REQUIRES: If disjoint_sorted_files, files[] contains disjoint ranges
 //           in sorted order.
+
 bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
                            bool disjoint_sorted_files,
                            const std::vector<FileMetaData*>& files,
@@ -87,9 +88,9 @@ class Version {
   // under live iterators)
   void Ref();
   void Unref();
-
+//这个方法没用了
   void GetOverlappingInputs(
-      int level,
+      int level,int group,
       const InternalKey* begin,         // NULL means before all keys
       const InternalKey* end,           // NULL means after all keys
       std::vector<FileMetaData*>* inputs);
@@ -98,16 +99,28 @@ class Version {
   // some part of [*smallest_user_key,*largest_user_key].
   // smallest_user_key==NULL represents a key smaller than all keys in the DB.
   // largest_user_key==NULL represents a key largest than all keys in the DB.
+  //这个方法也没用了
+  /* comment by zdn
   bool OverlapInLevel(int level,
                       const Slice* smallest_user_key,
                       const Slice* largest_user_key);
+                      */
 
   // Return the level at which we should place a new memtable compaction
   // result that covers the range [smallest_user_key,largest_user_key].
+  //这个方法固定返回0。不会跳到其他层中
+  /* comment by zdn
   int PickLevelForMemTableOutput(const Slice& smallest_user_key,
                                  const Slice& largest_user_key);
+                                 */
 
-  int NumFiles(int level) const { return files_[level].size(); }
+  int NumFiles(int level) const 
+  {
+    int result = 0;
+    for(int group = 0; group < config::kNumGroups; group++)
+      result += files_[level][group].size(); 
+    return result; 
+  }
 
   // Return a human readable string that describes this version's contents.
   std::string DebugString() const;
@@ -117,24 +130,25 @@ class Version {
   friend class VersionSet;
 
   class LevelFileNumIterator;
-  Iterator* NewConcatenatingIterator(const ReadOptions&, int level) const;
+  Iterator* NewConcatenatingIterator(const ReadOptions&, int level,int group) const;
 
   // Call func(arg, level, f) for every file that overlaps user_key in
   // order from newest to oldest.  If an invocation of func returns
   // false, makes no more calls.
   //
   // REQUIRES: user portion of internal_key == user_key.
+  //这个方法应该也没用了
   void ForEachOverlapping(Slice user_key, Slice internal_key,
                           void* arg,
                           bool (*func)(void*, int, FileMetaData*));
-
+//version是个链表
   VersionSet* vset_;            // VersionSet to which this Version belongs
   Version* next_;               // Next version in linked list
   Version* prev_;               // Previous version in linked list
   int refs_;                    // Number of live refs to this version
 
-  // List of files per level
-  std::vector<FileMetaData*> files_[config::kNumLevels];
+  // List of files per level and per group
+  std::vector<FileMetaData*> files_[config::kNumLevels][config::kNumGroups];
 
   // Next file to compact based on seek stats.
   FileMetaData* file_to_compact_;
@@ -201,6 +215,8 @@ class VersionSet {
   // Return the number of Table files at the specified level.
   int NumLevelFiles(int level) const;
 
+  
+
   // Return the combined file size of all files at the specified level.
   int64_t NumLevelBytes(int level) const;
 
@@ -233,15 +249,17 @@ class VersionSet {
   // the specified level.  Returns NULL if there is nothing in that
   // level that overlaps the specified range.  Caller should delete
   // the result.
+  /*
   Compaction* CompactRange(
-      int level,
+      int level,int group,
       const InternalKey* begin,
-      const InternalKey* end);
+      const InternalKey* end);*/
 
   // Return the maximum overlapping data (in bytes) at next level for any
   // file at a level >= 1.
+  /* comment by zdn
   int64_t MaxNextLevelOverlappingBytes();
-
+*/
   // Create an iterator that reads over the compaction inputs for "*c".
   // The caller should delete the iterator when no longer needed.
   Iterator* MakeInputIterator(Compaction* c);
@@ -263,7 +281,7 @@ class VersionSet {
   // Return a human-readable short (single-line) summary of the number
   // of files per level.  Uses *scratch as backing store.
   struct LevelSummaryStorage {
-    char buffer[100];
+    char buffer[200];
   };
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
 
@@ -351,8 +369,9 @@ class Compaction {
   // Returns true if the information we have available guarantees that
   // the compaction is producing data in "level+1" for which no data exists
   // in levels greater than "level+1".
+  /* comment by zdn
   bool IsBaseLevelForKey(const Slice& user_key);
-
+*/
   // Returns true iff we should stop building the current output
   // before processing "internal_key".
   bool ShouldStopBefore(const Slice& internal_key);
@@ -373,7 +392,7 @@ class Compaction {
   VersionEdit edit_;
 
   // Each compaction reads inputs from "level_" and "level_+1"
-  std::vector<FileMetaData*> inputs_[2];      // The two sets of inputs
+  std::vector<FileMetaData*> inputs_[config::kNumGroups];      // The two sets of inputs
 
   // State used to check for number of of overlapping grandparent files
   // (parent == level_ + 1, grandparent == level_ + 2)

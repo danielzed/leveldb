@@ -16,6 +16,7 @@
 #include "util/mutexlock.h"
 #include "util/random.h"
 #include "util/testutil.h"
+#include "util/posix_logger.h"
 
 // Comma-separated list of operations to run in the specified order
 //   Actual benchmarks:
@@ -40,28 +41,34 @@
 //      stats       -- Print DB stats
 //      sstables    -- Print sstable info
 //      heapprofile -- Dump a heap profile (if supported by this port)
+// static const char* FLAGS_benchmarks =
+//     "fillseq,"
+//     "fillsync,"
+//     "fillrandom,"
+//     "overwrite,"
+//     "readrandom,"
+//     "readrandom,"  // Extra run to allow previous compactions to quiesce
+//     "readseq,"
+//     "readreverse,"
+//     "compact,"
+//     "readrandom,"
+//     "readseq,"
+//     "readreverse,"
+//     "fill100K,"
+//     "crc32c,"
+//     "snappycomp,"
+//     "snappyuncomp,"
+//     "acquireload,"
+//     ;
 static const char* FLAGS_benchmarks =
-    "fillseq,"
-    "fillsync,"
     "fillrandom,"
-    "overwrite,"
+    "stats,"
     "readrandom,"
-    "readrandom,"  // Extra run to allow previous compactions to quiesce
-    "readseq,"
-    "readreverse,"
-    "compact,"
-    "readrandom,"
-    "readseq,"
-    "readreverse,"
-    "fill100K,"
-    "crc32c,"
-    "snappycomp,"
-    "snappyuncomp,"
-    "acquireload,"
+    "stats,"
     ;
 
 // Number of key/values to place in database
-static int FLAGS_num = 1000000;
+static int FLAGS_num = 500000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
@@ -70,7 +77,7 @@ static int FLAGS_reads = -1;
 static int FLAGS_threads = 1;
 
 // Size of each value
-static int FLAGS_value_size = 100;
+static int FLAGS_value_size = 1000;
 
 // Arrange to generate values that shrink to this fraction of
 // their original size after compression
@@ -714,6 +721,11 @@ class Benchmark {
     options.max_open_files = FLAGS_open_files;
     options.filter_policy = filter_policy_;
     options.reuse_logs = FLAGS_reuse_logs;
+
+    FILE* infolog = fopen("/home/daniel/projects/leveldb/log","w+");
+    options.info_log = new PosixLogger(infolog,pthread_self);
+    
+    
     Status s = DB::Open(options, FLAGS_db, &db_);
     if (!s.ok()) {
       fprintf(stderr, "open error: %s\n", s.ToString().c_str());
@@ -749,6 +761,7 @@ class Benchmark {
     Status s;
     int64_t bytes = 0;
     for (int i = 0; i < num_; i += entries_per_batch_) {
+      
       batch.Clear();
       for (int j = 0; j < entries_per_batch_; j++) {
         const int k = seq ? i+j : (thread->rand.Next() % FLAGS_num);
@@ -798,9 +811,11 @@ class Benchmark {
     std::string value;
     int found = 0;
     for (int i = 0; i < reads_; i++) {
+      printf("this is op %d\n",i);
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
       snprintf(key, sizeof(key), "%016d", k);
+      //printf("index %d : %s\n",i,key);
       if (db_->Get(options, key, &value).ok()) {
         found++;
       }

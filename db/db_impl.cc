@@ -522,13 +522,15 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   if (s.ok() && meta.file_size > 0) {
     const Slice min_user_key = meta.smallest.user_key();
     const Slice max_user_key = meta.largest.user_key();
+    /* comment by zdn
     if (base != NULL) {
       level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
     }
+    */
     edit->AddFile(level, meta.number, meta.file_size,
                   meta.smallest, meta.largest);
   }
-
+//这个应该是后来log出来的日志的统计结构体
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros;
   stats.bytes_written = meta.file_size;
@@ -574,11 +576,13 @@ void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
   {
     MutexLock l(&mutex_);
     Version* base = versions_->current();
+    /* comment by zdn
     for (int level = 1; level < config::kNumLevels; level++) {
       if (base->OverlapInLevel(level, begin, end)) {
         max_level_with_files = level;
       }
     }
+    */
   }
   TEST_CompactMemTable();  // TODO(sanjay): Skip if memtable does not overlap
   for (int level = 0; level < max_level_with_files; level++) {
@@ -648,7 +652,7 @@ void DBImpl::RecordBackgroundError(const Status& s) {
   }
 }
 
-void DBImpl::MaybeScheduleCompaction() {
+void DBImpl::  MaybeScheduleCompaction() {
   mutex_.AssertHeld();
   if (background_compaction_scheduled_) {
     // Already scheduled
@@ -700,6 +704,7 @@ void DBImpl::BackgroundCompaction() {
   Compaction* c;
   bool is_manual = (manual_compaction_ != NULL);
   InternalKey manual_end;
+  /* comment by zdn
   if (is_manual) {
     ManualCompaction* m = manual_compaction_;
     c = versions_->CompactRange(m->level, m->begin, m->end);
@@ -715,7 +720,8 @@ void DBImpl::BackgroundCompaction() {
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
     c = versions_->PickCompaction();
-  }
+  }*/
+  c = versions_->PickCompaction();
 
   Status status;
   if (c == NULL) {
@@ -871,6 +877,10 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
 
 Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   mutex_.AssertHeld();
+  if(compact->compaction->level() == 1)
+  {
+    printf("yahaha\n");
+  }
   Log(options_.info_log,  "Compacted %d@%d + %d@%d files => %lld bytes",
       compact->compaction->num_input_files(0),
       compact->compaction->level(),
@@ -894,13 +904,29 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
 
-  Log(options_.info_log,  "Compacting %d@%d + %d@%d files",
+  Log(options_.info_log,  "Compacting %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d files",
       compact->compaction->num_input_files(0),
-      compact->compaction->level(),
+      0,
       compact->compaction->num_input_files(1),
-      compact->compaction->level() + 1);
+      1,
+      compact->compaction->num_input_files(2),
+      2,
+      compact->compaction->num_input_files(3),
+      3,
+      compact->compaction->num_input_files(4),
+      4,
+      compact->compaction->num_input_files(5),
+      5,
+      compact->compaction->num_input_files(6),
+      6,
+      compact->compaction->num_input_files(7),
+      7,
+      compact->compaction->num_input_files(8),
+      8,
+      compact->compaction->num_input_files(9),
+      9);
 
-  assert(versions_->NumLevelFiles(compact->compaction->level()) > 0);
+  //assert(versions_->NumLevelFiles(compact->compaction->level()) > 0);
   assert(compact->builder == NULL);
   assert(compact->outfile == NULL);
   if (snapshots_.empty()) {
@@ -934,6 +960,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     }
 
     Slice key = input->key();
+    //这段是为了避免当前形成的leveli+1 file keyrange太大，将来和leveli+2合并时，涉及的文件太多
     if (compact->compaction->ShouldStopBefore(key) &&
         compact->builder != NULL) {
       status = FinishCompactionOutputFile(compact, input);
@@ -962,9 +989,11 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       if (last_sequence_for_key <= compact->smallest_snapshot) {
         // Hidden by an newer entry for same user key
         drop = true;    // (A)
-      } else if (ikey.type == kTypeDeletion &&
+      /*} else if (ikey.type == kTypeDeletion &&
                  ikey.sequence <= compact->smallest_snapshot &&
-                 compact->compaction->IsBaseLevelForKey(ikey.user_key)) {
+                 compact->compaction->IsBaseLevelForKey(ikey.user_key)) {*/
+        } else if (ikey.type == kTypeDeletion &&
+                 ikey.sequence <= compact->smallest_snapshot) {
         // For this user key:
         // (1) there is no data in higher levels
         // (2) data in lower levels will have larger sequence numbers
@@ -1017,6 +1046,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   if (status.ok() && shutting_down_.Acquire_Load()) {
     status = Status::IOError("Deleting DB during compaction");
   }
+  //上面的for循环可能退出的时候还有builder再用的，就要把它转换成ssttable。
   if (status.ok() && compact->builder != NULL) {
     status = FinishCompactionOutputFile(compact, input);
   }
@@ -1041,7 +1071,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   stats_[compact->compaction->level() + 1].Add(stats);
 
   if (status.ok()) {
+     Log(options_.info_log,"hahaha");
     status = InstallCompactionResults(compact);
+    Log(options_.info_log,"hahaha");
   }
   if (!status.ok()) {
     RecordBackgroundError(status);
@@ -1075,7 +1107,7 @@ static void CleanupIteratorState(void* arg1, void* arg2) {
 }
 
 }  // anonymous namespace
-
+//在内存中的ｔａｂｌｅ的顺序迭代器。
 Iterator* DBImpl::NewInternalIterator(const ReadOptions& options,
                                       SequenceNumber* latest_snapshot,
                                       uint32_t* seed) {
@@ -1108,11 +1140,11 @@ Iterator* DBImpl::TEST_NewInternalIterator() {
   uint32_t ignored_seed;
   return NewInternalIterator(ReadOptions(), &ignored, &ignored_seed);
 }
-
+/* comment by zdn
 int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   MutexLock l(&mutex_);
   return versions_->MaxNextLevelOverlappingBytes();
-}
+}*/
 
 Status DBImpl::Get(const ReadOptions& options,
                    const Slice& key,
@@ -1153,11 +1185,14 @@ Status DBImpl::Get(const ReadOptions& options,
   }
 
   if (have_stat_update && current->UpdateStats(stats)) {
+    printf("hello\n");
     MaybeScheduleCompaction();
+    printf("world\n");
   }
   mem->Unref();
   if (imm != NULL) imm->Unref();
   current->Unref();
+  printf("world\n");
   return s;
 }
 
@@ -1191,6 +1226,7 @@ void DBImpl::ReleaseSnapshot(const Snapshot* s) {
 }
 
 // Convenience methods
+//put也是用writebatch实现的
 Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
   return DB::Put(o, key, val);
 }
@@ -1198,7 +1234,7 @@ Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
 Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
   return DB::Delete(options, key);
 }
-
+//这个接口很重要，makeroomforwrite
 Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
   Writer w(&mutex_);
   w.batch = my_batch;
@@ -1386,7 +1422,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
   }
   return s;
 }
-
+//stats命令打印的日志信息
 bool DBImpl::GetProperty(const Slice& property, std::string* value) {
   value->clear();
 
