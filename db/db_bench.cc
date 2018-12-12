@@ -62,7 +62,6 @@
 //     ;
 static const char* FLAGS_benchmarks =
     "fillrandom,"
-    "stats,"
     "readrandom,"
     "stats,"
     ;
@@ -811,7 +810,6 @@ class Benchmark {
     std::string value;
     int found = 0;
     for (int i = 0; i < reads_; i++) {
-      printf("this is op %d\n",i);
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
       snprintf(key, sizeof(key), "%016d", k);

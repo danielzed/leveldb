@@ -904,6 +904,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
 
+  if(compact->compaction->num_input_files(1)>0)
+    printf("comapct\n");
   Log(options_.info_log,  "Compacting %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d + %d@%d files",
       compact->compaction->num_input_files(0),
       0,
@@ -1161,10 +1163,10 @@ Status DBImpl::Get(const ReadOptions& options,
   MemTable* mem = mem_;
   MemTable* imm = imm_;
   Version* current = versions_->current();
+
   mem->Ref();
   if (imm != NULL) imm->Ref();
   current->Ref();
-
   bool have_stat_update = false;
   Version::GetStats stats;
 
@@ -1178,21 +1180,20 @@ Status DBImpl::Get(const ReadOptions& options,
     } else if (imm != NULL && imm->Get(lkey, value, &s)) {
       // Done
     } else {
+      
       s = current->Get(options, lkey, value, &stats);
       have_stat_update = true;
     }
     mutex_.Lock();
   }
-
-  if (have_stat_update && current->UpdateStats(stats)) {
-    printf("hello\n");
-    MaybeScheduleCompaction();
-    printf("world\n");
-  }
+  // 因为flamdb中，seek不会触发compact，只有group满才会触发compact
+  // if (have_stat_update && current->UpdateStats(stats)) {
+  //   printf("updatestats\n");
+  //   MaybeScheduleCompaction();
+  // }
   mem->Unref();
   if (imm != NULL) imm->Unref();
   current->Unref();
-  printf("world\n");
   return s;
 }
 
